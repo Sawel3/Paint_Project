@@ -14,3 +14,5 @@
 #include <memory.h>
 #include <tchar.h>
 #include <commdlg.h>
+#include <commctrl.h>
+#pragma comment(lib, "comctl32.lib")

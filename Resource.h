@@ -4,6 +4,9 @@
 
 #define IDS_APP_TITLE			103
 #define IDM_SELECT_COLOR 32771
+#define IDM_ERASER 32772
+#define IDM_SET_PEN_SIZE     32779
+#define IDM_SET_ERASER_SIZE  32780
 #define IDR_MAINFRAME			128
 #define IDD_PAINT_DIALOG	102
 #define IDD_ABOUTBOX			103
@@ -13,6 +16,12 @@
 #define IDI_SMALL				108
 #define IDC_PAINT			109
 #define IDC_MYICON				2
+#define IDD_SIZE_DIALOG  200
+#define IDC_SIZE_EDIT    201
+#define IDM_SHAPE_RECT  32781
+#define IDM_SHAPE_CIRC  32782
+#define IDM_SHAPE_LINE  32783
+
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif

@@ -6,11 +6,26 @@
 
 #define MAX_LOADSTRING 100
 
+// Forward declaration of SizeDialogProc
+INT_PTR CALLBACK SizeDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+
 // Global Variables:
 HINSTANCE hInst;                                // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
 COLORREF g_DrawColor = RGB(0, 0, 0);            // Default: black
+enum ShapeType { SHAPE_NONE, SHAPE_RECT, SHAPE_CIRC };
+ShapeType g_ShapeType = SHAPE_NONE;
+bool isShapeDrawing = false;
+POINT shapeStart = { 0, 0 };
+POINT shapeEnd = { 0, 0 };
+const int g_PreviewBoxSize = 32;    // Size of the preview box (width and height)
+const int g_PreviewBoxMargin = 8;   // Margin from the window edge
+bool isEraserMode = false;
+int g_PenSize = 2;      // Default pen size
+int g_EraserSize = 10;  // Default eraser size
+HWND hStatusBar = NULL;
+
 
 
 // Drawing state
@@ -21,6 +36,15 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+void UpdateStatusBar()
+{
+    if (hStatusBar) {
+        wchar_t buf[128];
+        swprintf_s(buf, L"Pen Size: %d   Eraser Size: %d", g_PenSize, g_EraserSize);
+        SendMessageW(hStatusBar, SB_SETTEXT, 0, (LPARAM)buf);
+    }
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
@@ -95,6 +119,13 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+    // Create status bar
+    InitCommonControls();
+    hStatusBar = CreateWindowExW(
+        0, STATUSCLASSNAMEW, NULL,
+        WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
+        0, 0, 0, 0,
+        hWnd, (HMENU)1, hInst, NULL);
 
     if (!hWnd)
     {
@@ -146,19 +177,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     break;
     case WM_LBUTTONDOWN:
-        isDrawing = true;
-        lastPoint.x = LOWORD(lParam);
-        lastPoint.y = HIWORD(lParam);
-        SetCapture(hWnd);
+        if (g_ShapeType != SHAPE_NONE) {
+            isShapeDrawing = true;
+            shapeStart.x = shapeEnd.x = LOWORD(lParam);
+            shapeStart.y = shapeEnd.y = HIWORD(lParam);
+            SetCapture(hWnd);
+        }
+        else {
+            isDrawing = true;
+            lastPoint.x = LOWORD(lParam);
+            lastPoint.y = HIWORD(lParam);
+            SetCapture(hWnd);
+        }
         break;
     case WM_MOUSEMOVE:
-        if (isDrawing && (wParam & MK_LBUTTON)) {
+        if (isShapeDrawing && (wParam & MK_LBUTTON)) {
+            shapeEnd.x = LOWORD(lParam);
+            shapeEnd.y = HIWORD(lParam);
+            InvalidateRect(hWnd, NULL, FALSE); // To show preview
+        }
+        else if (isDrawing && (wParam & MK_LBUTTON)) {
             POINT pt;
             pt.x = LOWORD(lParam);
             pt.y = HIWORD(lParam);
 
             if (hMemDC) {
-                HPEN hPen = CreatePen(PS_SOLID, 2, g_DrawColor);
+                COLORREF penColor = isEraserMode ? RGB(255, 255, 255) : g_DrawColor; // White for eraser
+                int penWidth = isEraserMode ? g_EraserSize : g_PenSize;
+                HPEN hPen = CreatePen(PS_SOLID, penWidth, penColor); // Wider pen for eraser
                 HGDIOBJ oldPen = SelectObject(hMemDC, hPen);
                 MoveToEx(hMemDC, lastPoint.x, lastPoint.y, NULL);
                 LineTo(hMemDC, pt.x, pt.y);
@@ -166,13 +212,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DeleteObject(hPen);
             }
 
+
             lastPoint = pt;
             InvalidateRect(hWnd, NULL, FALSE);
         }
         break;
     case WM_LBUTTONUP:
-        isDrawing = false;
-        ReleaseCapture();
+        if (isShapeDrawing) {
+            shapeEnd.x = LOWORD(lParam);
+            shapeEnd.y = HIWORD(lParam);
+            // Draw the shape permanently to hMemDC
+            HPEN hPen = CreatePen(PS_SOLID, g_PenSize, g_DrawColor);
+            HGDIOBJ oldPen = SelectObject(hMemDC, hPen);
+            HGDIOBJ oldBrush = SelectObject(hMemDC, GetStockObject(HOLLOW_BRUSH));
+            if (g_ShapeType == SHAPE_RECT) {
+                Rectangle(hMemDC, shapeStart.x, shapeStart.y, shapeEnd.x, shapeEnd.y);
+            }
+            else if (g_ShapeType == SHAPE_CIRC) {
+                Ellipse(hMemDC, shapeStart.x, shapeStart.y, shapeEnd.x, shapeEnd.y);
+            }
+            SelectObject(hMemDC, oldPen);
+            SelectObject(hMemDC, oldBrush);
+            DeleteObject(hPen);
+            isShapeDrawing = false;
+            ReleaseCapture();
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        else if (isDrawing) {
+            isDrawing = false;
+            ReleaseCapture();
+        }
+        break;
+    case WM_KEYDOWN:
+        if (wParam == 'E') {
+            isEraserMode = !isEraserMode;
+            InvalidateRect(hWnd, NULL, FALSE); // Optional: update UI
+        }
         break;
     case WM_COMMAND:
     {
@@ -183,8 +258,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_ABOUT:
             DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
             break;
+        case IDM_ERASER:
+            isEraserMode = !isEraserMode; // Toggle eraser mode
+            InvalidateRect(hWnd, NULL, FALSE); // Optional: update UI
+            break;
         case IDM_SELECT_COLOR:
         {
+            isEraserMode = false;
             CHOOSECOLOR cc = { 0 };
             static COLORREF customColors[16] = { 0 };
             cc.lStructSize = sizeof(cc);
@@ -194,9 +274,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             cc.Flags = CC_FULLOPEN | CC_RGBINIT;
             if (ChooseColor(&cc)) {
                 g_DrawColor = cc.rgbResult;
+                InvalidateRect(hWnd, NULL, FALSE);
             }
         }
         break;
+        case IDM_SET_PEN_SIZE:
+            DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SIZE_DIALOG), hWnd, SizeDialogProc, (LPARAM)&g_PenSize);
+            UpdateStatusBar();
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        case IDM_SET_ERASER_SIZE:
+            DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SIZE_DIALOG), hWnd, SizeDialogProc, (LPARAM)&g_EraserSize);
+            UpdateStatusBar();
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        case IDM_SHAPE_RECT:
+            g_ShapeType = SHAPE_RECT;
+            isEraserMode = false;
+            break;
+        case IDM_SHAPE_CIRC:
+            g_ShapeType = SHAPE_CIRC;
+            isEraserMode = false;
+            break;
+		case IDM_SHAPE_LINE:
+			g_ShapeType = SHAPE_NONE; // Reset shape type
+			isEraserMode = false;
+			break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
             break;
@@ -211,6 +314,64 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         HDC hdc = BeginPaint(hWnd, &ps);
         if (hMemDC && hBitmap) {
             BitBlt(hdc, 0, 0, width, height, hMemDC, 0, 0, SRCCOPY);
+            // Draw color preview box in the top-left corner
+            RECT previewBox = {
+                g_PreviewBoxMargin,
+                g_PreviewBoxMargin,
+                g_PreviewBoxMargin + g_PreviewBoxSize,
+                g_PreviewBoxMargin + g_PreviewBoxSize
+            };
+            // Draw shape preview if currently drawing a shape
+            if (isShapeDrawing) {
+                HPEN hPen = CreatePen(PS_DOT, g_PenSize, g_DrawColor);
+                HGDIOBJ oldPen = SelectObject(hdc, hPen);
+                HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+                if (g_ShapeType == SHAPE_RECT) {
+                    Rectangle(hdc, shapeStart.x, shapeStart.y, shapeEnd.x, shapeEnd.y);
+                }
+                else if (g_ShapeType == SHAPE_CIRC) {
+                    Ellipse(hdc, shapeStart.x, shapeStart.y, shapeEnd.x, shapeEnd.y);
+                }
+                SelectObject(hdc, oldPen);
+                SelectObject(hdc, oldBrush);
+                DeleteObject(hPen);
+            }
+            if (isEraserMode) {
+                // Fill with white (eraser color)
+                HBRUSH eraserBrush = CreateSolidBrush(RGB(255, 255, 255));
+                FillRect(hdc, &previewBox, eraserBrush);
+                DeleteObject(eraserBrush);
+
+                // Draw a red border to indicate eraser mode
+                HPEN borderPen = CreatePen(PS_SOLID, 3, RGB(255, 0, 0));
+                HGDIOBJ oldPen = SelectObject(hdc, borderPen);
+                HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+                Rectangle(hdc, previewBox.left, previewBox.top, previewBox.right, previewBox.bottom);
+                SelectObject(hdc, oldPen);
+                SelectObject(hdc, oldBrush);
+                DeleteObject(borderPen);
+
+                // Draw "Eraser" text below the box
+                TextOut(hdc, g_PreviewBoxMargin, g_PreviewBoxMargin + g_PreviewBoxSize + 4, L"Eraser", 6);
+            }
+            else {
+                // Normal color preview
+                HBRUSH previewBrush = CreateSolidBrush(g_DrawColor);
+                FillRect(hdc, &previewBox, previewBrush);
+                DeleteObject(previewBrush);
+
+                // Draw a black border
+                HPEN borderPen = CreatePen(PS_SOLID, 2, RGB(0, 0, 0));
+                HGDIOBJ oldPen = SelectObject(hdc, borderPen);
+                HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+                Rectangle(hdc, previewBox.left, previewBox.top, previewBox.right, previewBox.bottom);
+                SelectObject(hdc, oldPen);
+                SelectObject(hdc, oldBrush);
+                DeleteObject(borderPen);
+
+                // Draw "Color" text below the box
+                TextOut(hdc, g_PreviewBoxMargin, g_PreviewBoxMargin + g_PreviewBoxSize + 4, L"Color", 5);
+            }
 
         }
         EndPaint(hWnd, &ps);
@@ -240,6 +401,40 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
         {
             EndDialog(hDlg, LOWORD(wParam));
+            return (INT_PTR)TRUE;
+        }
+        break;
+    }
+    return (INT_PTR)FALSE;
+}
+INT_PTR CALLBACK SizeDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    static int* pSize = nullptr;
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        pSize = (int*)lParam;
+        SetDlgItemInt(hDlg, IDC_SIZE_EDIT, *pSize, FALSE);
+        return (INT_PTR)TRUE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK)
+        {
+            BOOL success = FALSE;
+            int val = GetDlgItemInt(hDlg, IDC_SIZE_EDIT, &success, FALSE);
+            if (success && val > 0 && val < 100)
+            {
+                *pSize = val;
+                EndDialog(hDlg, IDOK);
+            }
+            else
+            {
+                MessageBox(hDlg, L"Please enter a value between 1 and 99.", L"Invalid Size", MB_OK | MB_ICONWARNING);
+            }
+            return (INT_PTR)TRUE;
+        }
+        else if (LOWORD(wParam) == IDCANCEL)
+        {
+            EndDialog(hDlg, IDCANCEL);
             return (INT_PTR)TRUE;
         }
         break;
