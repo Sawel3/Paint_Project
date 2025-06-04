@@ -10,11 +10,12 @@
 HINSTANCE hInst;                                // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+COLORREF g_DrawColor = RGB(0, 0, 0);            // Default: black
+
 
 // Drawing state
 bool isDrawing = false;
 POINT lastPoint = { 0, 0 };
-
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -157,7 +158,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             pt.y = HIWORD(lParam);
 
             if (hMemDC) {
-                HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 0, 0));
+                HPEN hPen = CreatePen(PS_SOLID, 2, g_DrawColor);
                 HGDIOBJ oldPen = SelectObject(hMemDC, hPen);
                 MoveToEx(hMemDC, lastPoint.x, lastPoint.y, NULL);
                 LineTo(hMemDC, pt.x, pt.y);
@@ -182,6 +183,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_ABOUT:
             DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
             break;
+        case IDM_SELECT_COLOR:
+        {
+            CHOOSECOLOR cc = { 0 };
+            static COLORREF customColors[16] = { 0 };
+            cc.lStructSize = sizeof(cc);
+            cc.hwndOwner = hWnd;
+            cc.rgbResult = g_DrawColor;
+            cc.lpCustColors = customColors;
+            cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+            if (ChooseColor(&cc)) {
+                g_DrawColor = cc.rgbResult;
+            }
+        }
+        break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
             break;
@@ -196,6 +211,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         HDC hdc = BeginPaint(hWnd, &ps);
         if (hMemDC && hBitmap) {
             BitBlt(hdc, 0, 0, width, height, hMemDC, 0, 0, SRCCOPY);
+
         }
         EndPaint(hWnd, &ps);
     }
