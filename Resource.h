@@ -21,6 +21,10 @@
 #define IDM_SHAPE_RECT  32781
 #define IDM_SHAPE_CIRC  32782
 #define IDM_SHAPE_LINE  32783
+#define IDM_UNDO 32785
+#define IDM_SAVE 32786
+#define IDM_LOAD 32787
+#define IDM_NEW 32788
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

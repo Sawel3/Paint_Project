@@ -25,6 +25,8 @@ bool isEraserMode = false;
 int g_PenSize = 2;      // Default pen size
 int g_EraserSize = 10;  // Default eraser size
 HWND hStatusBar = NULL;
+std::vector<HBITMAP> g_UndoStack;
+const int MAX_UNDO = 10; // Limit the number of undo steps
 
 
 
@@ -36,6 +38,150 @@ ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+HBITMAP CopyBitmap(HDC hdcSrc, HBITMAP hbmSrc, int width, int height) {
+    HDC hdcMemSrc = CreateCompatibleDC(hdcSrc);
+    HDC hdcMemDst = CreateCompatibleDC(hdcSrc);
+    HBITMAP hbmCopy = CreateCompatibleBitmap(hdcSrc, width, height);
+    HGDIOBJ oldSrc = SelectObject(hdcMemSrc, hbmSrc);
+    HGDIOBJ oldDst = SelectObject(hdcMemDst, hbmCopy);
+    BitBlt(hdcMemDst, 0, 0, width, height, hdcMemSrc, 0, 0, SRCCOPY);
+    SelectObject(hdcMemSrc, oldSrc);
+    SelectObject(hdcMemDst, oldDst);
+    DeleteDC(hdcMemSrc);
+    DeleteDC(hdcMemDst);
+    return hbmCopy;
+}
+
+void PushUndo(HDC hdc, HBITMAP hBitmap, int width, int height) {
+    if (!hBitmap) return;
+    HBITMAP hCopy = CopyBitmap(hdc, hBitmap, width, height);
+    g_UndoStack.push_back(hCopy);
+    if (g_UndoStack.size() > MAX_UNDO) {
+        DeleteObject(g_UndoStack.front());
+        g_UndoStack.erase(g_UndoStack.begin());
+    }
+}
+
+void PopUndo(HDC& hdc, HBITMAP& hBitmap, int width, int height) {
+    if (g_UndoStack.empty()) return;
+    HBITMAP hPrev = g_UndoStack.back();
+    g_UndoStack.pop_back();
+
+    // Select the new bitmap into the memory DC
+    HGDIOBJ oldBitmap = SelectObject(hdc, hPrev);
+
+    // Delete the current bitmap (avoid memory leak)
+    if (hBitmap && hBitmap != hPrev) {
+        DeleteObject(hBitmap);
+    }
+    hBitmap = hPrev;
+}
+
+void NewCanvas(HDC& hMemDC, HBITMAP& hBitmap, int width, int height) {
+    // Clear undo stack
+    for (HBITMAP hbm : g_UndoStack) {
+        DeleteObject(hbm);
+    }
+    g_UndoStack.clear();
+
+    // Delete old bitmap
+    if (hBitmap) {
+        DeleteObject(hBitmap);
+        hBitmap = NULL;
+    }
+
+    // Create new bitmap and select into memory DC
+    hBitmap = CreateCompatibleBitmap(hMemDC, width, height);
+    SelectObject(hMemDC, hBitmap);
+
+    // Fill with white
+    HBRUSH hBrush = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    RECT rect = { 0, 0, width, height };
+    FillRect(hMemDC, &rect, hBrush);
+
+    // Push initial state for undo
+    PushUndo(hMemDC, hBitmap, width, height);
+}
+
+// For GetSaveFileName/GetOpenFileName
+bool SaveBitmapToFile(HBITMAP hBitmap, HDC hdc, int width, int height, LPCWSTR filename) {
+    BITMAP bmp;
+    GetObject(hBitmap, sizeof(BITMAP), &bmp);
+
+    BITMAPFILEHEADER bmfHeader = { 0 };
+    BITMAPINFOHEADER bi = { 0 };
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = width;
+    bi.biHeight = height;
+    bi.biPlanes = 1;
+    bi.biBitCount = 24;
+    bi.biCompression = BI_RGB;
+
+    int lineBytes = ((width * 3 + 3) & ~3);
+    int imageSize = lineBytes * height;
+    std::vector<BYTE> bits(imageSize);
+
+    BITMAPINFO biInfo = { 0 };
+    biInfo.bmiHeader = bi;
+
+    // Get the bitmap bits
+    GetDIBits(hdc, hBitmap, 0, height, bits.data(), &biInfo, DIB_RGB_COLORS);
+
+    bmfHeader.bfType = 0x4D42; // 'BM'
+    bmfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bmfHeader.bfSize = bmfHeader.bfOffBits + imageSize;
+
+    HANDLE hFile = CreateFileW(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+
+    DWORD dwWritten = 0;
+    WriteFile(hFile, &bmfHeader, sizeof(bmfHeader), &dwWritten, NULL);
+    WriteFile(hFile, &bi, sizeof(bi), &dwWritten, NULL);
+    WriteFile(hFile, bits.data(), imageSize, &dwWritten, NULL);
+    CloseHandle(hFile);
+    return true;
+}
+
+bool LoadBitmapFromFile(HDC hdc, HBITMAP& hBitmap, int& width, int& height, LPCWSTR filename) {
+    HANDLE hFile = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+
+    BITMAPFILEHEADER bmfHeader;
+    DWORD dwRead = 0;
+    ReadFile(hFile, &bmfHeader, sizeof(bmfHeader), &dwRead, NULL);
+    if (bmfHeader.bfType != 0x4D42) { CloseHandle(hFile); return false; }
+
+    BITMAPINFOHEADER bi;
+    ReadFile(hFile, &bi, sizeof(bi), &dwRead, NULL);
+
+    int imageSize = bi.biSizeImage;
+    if (imageSize == 0) {
+        int lineBytes = ((bi.biWidth * 3 + 3) & ~3);
+        imageSize = lineBytes * abs(bi.biHeight);
+    }
+    std::vector<BYTE> bits(imageSize);
+    SetFilePointer(hFile, bmfHeader.bfOffBits, NULL, FILE_BEGIN);
+    ReadFile(hFile, bits.data(), imageSize, &dwRead, NULL);
+    CloseHandle(hFile);
+
+    HBITMAP hNewBitmap = CreateCompatibleBitmap(hdc, bi.biWidth, abs(bi.biHeight));
+    HDC hMemDC = CreateCompatibleDC(hdc);
+    HGDIOBJ oldBmp = SelectObject(hMemDC, hNewBitmap);
+
+    BITMAPINFO biInfo = { 0 };
+    biInfo.bmiHeader = bi;
+    SetDIBits(hMemDC, hNewBitmap, 0, abs(bi.biHeight), bits.data(), &biInfo, DIB_RGB_COLORS);
+
+    SelectObject(hMemDC, oldBmp);
+    DeleteDC(hMemDC);
+
+    if (hBitmap) DeleteObject(hBitmap);
+    hBitmap = hNewBitmap;
+    width = bi.biWidth;
+    height = abs(bi.biHeight);
+    return true;
+}
 
 void UpdateStatusBar()
 {
@@ -174,6 +320,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         RECT rect = { 0, 0, width, height };
         FillRect(hMemDC, &rect, hBrush);
         ReleaseDC(hWnd, hdc);
+        for (HBITMAP hbm : g_UndoStack) {
+            DeleteObject(hbm);
+        }
+        g_UndoStack.clear();
+
+        // Push initial state for undo
+        PushUndo(hMemDC, hBitmap, width, height);
     }
     break;
     case WM_LBUTTONDOWN:
@@ -184,6 +337,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             SetCapture(hWnd);
         }
         else {
+            if (!isShapeDrawing && !isDrawing && hMemDC && hBitmap && width > 0 && height > 0) {
+                PushUndo(hMemDC, hBitmap, width, height);
+            }
             isDrawing = true;
             lastPoint.x = LOWORD(lParam);
             lastPoint.y = HIWORD(lParam);
@@ -219,6 +375,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_LBUTTONUP:
         if (isShapeDrawing) {
+            if (isShapeDrawing && hMemDC && hBitmap && width > 0 && height > 0) {
+                PushUndo(hMemDC, hBitmap, width, height);
+            }
             shapeEnd.x = LOWORD(lParam);
             shapeEnd.y = HIWORD(lParam);
             // Draw the shape permanently to hMemDC
@@ -235,6 +394,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             SelectObject(hMemDC, oldBrush);
             DeleteObject(hPen);
             isShapeDrawing = false;
+            g_ShapeType = SHAPE_NONE;
             ReleaseCapture();
             InvalidateRect(hWnd, NULL, FALSE);
         }
@@ -246,21 +406,59 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
         if (wParam == 'E') {
             isEraserMode = !isEraserMode;
-            InvalidateRect(hWnd, NULL, FALSE); // Optional: update UI
+            InvalidateRect(hWnd, NULL, FALSE); //update UI
         }
         break;
     case WM_COMMAND:
     {
         int wmId = LOWORD(wParam);
         // Parse the menu selections:
-        switch (wmId)
+        switch (wmId){
+        case IDM_NEW:
+            if (hMemDC && width > 0 && height > 0) {
+                NewCanvas(hMemDC, hBitmap, width, height);
+                InvalidateRect(hWnd, NULL, TRUE);
+            }
+            break;
+
+        case IDM_SAVE:
         {
+            OPENFILENAME ofn = { 0 };
+            WCHAR szFile[MAX_PATH] = L"";
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hWnd;
+            ofn.lpstrFilter = L"BMP Files\0*.bmp\0All Files\0*.*\0";
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_OVERWRITEPROMPT;
+            if (GetSaveFileName(&ofn)) {
+                SaveBitmapToFile(hBitmap, hMemDC, width, height, szFile);
+            }
+        }
+        break;
+        case IDM_LOAD:
+        {
+            OPENFILENAME ofn = { 0 };
+            WCHAR szFile[MAX_PATH] = L"";
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hWnd;
+            ofn.lpstrFilter = L"BMP Files\0*.bmp\0All Files\0*.*\0";
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.Flags = OFN_FILEMUSTEXIST;
+            if (GetOpenFileName(&ofn)) {
+                LoadBitmapFromFile(hMemDC, hBitmap, width, height, szFile);
+                SelectObject(hMemDC, hBitmap);
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+        }
+        break;
         case IDM_ABOUT:
             DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
             break;
         case IDM_ERASER:
             isEraserMode = !isEraserMode; // Toggle eraser mode
-            InvalidateRect(hWnd, NULL, FALSE); // Optional: update UI
+            InvalidateRect(hWnd, NULL, FALSE); //update UI
             break;
         case IDM_SELECT_COLOR:
         {
@@ -300,6 +498,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_ShapeType = SHAPE_NONE; // Reset shape type
 			isEraserMode = false;
 			break;
+        case IDM_UNDO:
+            PopUndo(hMemDC, hBitmap, width, height);
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
             break;
@@ -380,6 +582,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         if (hMemDC) DeleteDC(hMemDC);
         if (hBitmap) DeleteObject(hBitmap);
+        for (HBITMAP hbm : g_UndoStack) {
+            DeleteObject(hbm);
+        }
+        g_UndoStack.clear();
         PostQuitMessage(0);
         break;
     default:
