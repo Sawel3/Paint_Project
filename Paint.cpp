@@ -177,11 +177,29 @@ INT_PTR CALLBACK TextDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 void UpdateStatusBar()
 {
     if (hStatusBar) {
+        wchar_t tool[32] = L"";
+        if (isEraserMode) {
+            wcscpy_s(tool, L"Eraser");
+        }
+        else if (isAddingText) {
+            wcscpy_s(tool, L"Text");
+        }
+        else if (g_ShapeType == SHAPE_RECT) {
+            wcscpy_s(tool, L"Rectangle");
+        }
+        else if (g_ShapeType == SHAPE_CIRC) {
+            wcscpy_s(tool, L"Circle");
+        }
+        else {
+            wcscpy_s(tool, L"Pen");
+        }
+
         wchar_t buf[128];
-        swprintf_s(buf, L"Pen Size: %d   Eraser Size: %d", g_PenSize, g_EraserSize);
+        swprintf_s(buf, L"Tool: %s   Pen Size: %d   Eraser Size: %d", tool, g_PenSize, g_EraserSize);
         SendMessageW(hStatusBar, SB_SETTEXT, 0, (LPARAM)buf);
     }
 }
+
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE hPrevInstance,
@@ -417,12 +435,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_KEYDOWN:
         if (wParam == 'E') {
-            isEraserMode = !isEraserMode;
+            isEraserMode = !isEraserMode; // Toggle eraser mode
             InvalidateRect(hWnd, NULL, FALSE); //update UI
+            UpdateStatusBar();
 		}
 		if (wParam == 'T') {
-			isAddingText = true;
-			SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Show text cursor
+            isAddingText = true;
+            SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Show text cursor
+            UpdateStatusBar();
 		}
 		if (wParam == VK_ESCAPE) {
 			isShapeDrawing = false;
@@ -440,29 +460,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		if (wParam == 'R') {
-			// Toggle shape drawing mode
-			isShapeDrawing = !isShapeDrawing;
-			if (isShapeDrawing) {
-				g_ShapeType = SHAPE_RECT; // Default to rectangle shape
-				SetCursor(LoadCursor(NULL, IDC_CROSS)); // Show cross cursor for shape drawing
-			}
-			else {
-				SetCursor(LoadCursor(NULL, IDC_ARROW)); // Reset cursor
-			}
-			InvalidateRect(hWnd, NULL, FALSE); //update UI
+            g_ShapeType = SHAPE_RECT;
+            isEraserMode = false;
+            UpdateStatusBar();
 		}
         if (wParam == 'C') {
-            // Toggle shape drawing mode
-            isShapeDrawing = !isShapeDrawing;
-            if (isShapeDrawing) {
-				g_ShapeType = SHAPE_CIRC; // Default to circle shape
-                SetCursor(LoadCursor(NULL, IDC_CROSS)); // Show cross cursor for shape drawing
-            }
-            else {
-                SetCursor(LoadCursor(NULL, IDC_ARROW)); // Reset cursor
-            }
-            InvalidateRect(hWnd, NULL, FALSE); //update UI
+            g_ShapeType = SHAPE_CIRC;
+            isEraserMode = false;
+            UpdateStatusBar();
         }
+		if (wParam == 'L') {
+			g_ShapeType = SHAPE_NONE; // Reset shape type
+			isEraserMode = false;
+			UpdateStatusBar();
+		}
+		if (wParam == VK_F4) {
+			CHOOSECOLOR cc = { 0 };
+			static COLORREF customColors[16] = { 0 };
+			cc.lStructSize = sizeof(cc);
+			cc.hwndOwner = hWnd;
+			cc.rgbResult = g_DrawColor;
+			cc.lpCustColors = customColors;
+			cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+			if (ChooseColor(&cc)) {
+				g_DrawColor = cc.rgbResult;
+				InvalidateRect(hWnd, NULL, FALSE);
+			}
+		}
         break;
     case WM_COMMAND:
     {
@@ -533,10 +557,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_ADD_TEXT:
             isAddingText = true;
             SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Show text cursor
+            UpdateStatusBar();
             break;
         case IDM_ERASER:
             isEraserMode = !isEraserMode; // Toggle eraser mode
             InvalidateRect(hWnd, NULL, FALSE); //update UI
+            UpdateStatusBar();
             break;
         case IDM_SELECT_COLOR:
         {
@@ -580,14 +606,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_SHAPE_RECT:
             g_ShapeType = SHAPE_RECT;
             isEraserMode = false;
+            UpdateStatusBar();
             break;
         case IDM_SHAPE_CIRC:
             g_ShapeType = SHAPE_CIRC;
             isEraserMode = false;
+            UpdateStatusBar();
             break;
 		case IDM_SHAPE_LINE:
 			g_ShapeType = SHAPE_NONE; // Reset shape type
 			isEraserMode = false;
+            UpdateStatusBar();
 			break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
