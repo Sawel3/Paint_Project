@@ -25,8 +25,6 @@ bool isEraserMode = false;
 int g_PenSize = 2;      // Default pen size
 int g_EraserSize = 10;  // Default eraser size
 HWND hStatusBar = NULL;
-std::vector<HBITMAP> g_UndoStack;
-const int MAX_UNDO = 10; // Limit the number of undo steps
 LOGFONT g_logFont = { 0 };
 HFONT g_hFont = NULL;
 
@@ -56,38 +54,7 @@ HBITMAP CopyBitmap(HDC hdcSrc, HBITMAP hbmSrc, int width, int height) {
     return hbmCopy;
 }
 
-void PushUndo(HDC hdc, HBITMAP hBitmap, int width, int height) {
-    if (!hBitmap) return;
-    HBITMAP hCopy = CopyBitmap(hdc, hBitmap, width, height);
-    g_UndoStack.push_back(hCopy);
-    if (g_UndoStack.size() > MAX_UNDO) {
-        DeleteObject(g_UndoStack.front());
-        g_UndoStack.erase(g_UndoStack.begin());
-    }
-}
-
-void PopUndo(HDC& hdc, HBITMAP& hBitmap, int width, int height) {
-    if (g_UndoStack.empty()) return;
-    HBITMAP hPrev = g_UndoStack.back();
-    g_UndoStack.pop_back();
-
-    // Select the new bitmap into the memory DC
-    HGDIOBJ oldBitmap = SelectObject(hdc, hPrev);
-
-    // Delete the current bitmap (avoid memory leak)
-    if (hBitmap && hBitmap != hPrev) {
-        DeleteObject(hBitmap);
-    }
-    hBitmap = hPrev;
-}
-
 void NewCanvas(HDC& hMemDC, HBITMAP& hBitmap, int width, int height) {
-    // Clear undo stack
-    for (HBITMAP hbm : g_UndoStack) {
-        DeleteObject(hbm);
-    }
-    g_UndoStack.clear();
-
     // Delete old bitmap
     if (hBitmap) {
         DeleteObject(hBitmap);
@@ -102,9 +69,6 @@ void NewCanvas(HDC& hMemDC, HBITMAP& hBitmap, int width, int height) {
     HBRUSH hBrush = (HBRUSH)GetStockObject(WHITE_BRUSH);
     RECT rect = { 0, 0, width, height };
     FillRect(hMemDC, &rect, hBrush);
-
-    // Push initial state for undo
-    PushUndo(hMemDC, hBitmap, width, height);
 }
 
 // For GetSaveFileName/GetOpenFileName
@@ -355,13 +319,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         RECT rect = { 0, 0, width, height };
         FillRect(hMemDC, &rect, hBrush);
         ReleaseDC(hWnd, hdc);
-        for (HBITMAP hbm : g_UndoStack) {
-            DeleteObject(hbm);
-        }
-        g_UndoStack.clear();
-        UpdateStatusBar();
-        // Push initial state for undo
-        PushUndo(hMemDC, hBitmap, width, height);
     }
     break;
 
@@ -385,7 +342,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     SelectObject(hMemDC, hOldFont);
                 }
                 InvalidateRect(hWnd, NULL, FALSE);
-                PushUndo(hMemDC, hBitmap, width, height);
             }
             isAddingText = false;
             SetCursor(LoadCursor(NULL, IDC_ARROW));
@@ -399,9 +355,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             SetCapture(hWnd);
         }
         else {
-            if (!isShapeDrawing && !isDrawing && hMemDC && hBitmap && width > 0 && height > 0) {
-                PushUndo(hMemDC, hBitmap, width, height);
-            }
             isDrawing = true;
             lastPoint.x = LOWORD(lParam);
             lastPoint.y = HIWORD(lParam);
@@ -437,9 +390,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_LBUTTONUP:
         if (isShapeDrawing) {
-            if (isShapeDrawing && hMemDC && hBitmap && width > 0 && height > 0) {
-                PushUndo(hMemDC, hBitmap, width, height);
-            }
             shapeEnd.x = LOWORD(lParam);
             shapeEnd.y = HIWORD(lParam);
             // Draw the shape permanently to hMemDC
@@ -468,6 +418,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_KEYDOWN:
         if (wParam == 'E') {
             isEraserMode = !isEraserMode;
+            InvalidateRect(hWnd, NULL, FALSE); //update UI
+		}
+		if (wParam == 'T') {
+			isAddingText = true;
+			SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Show text cursor
+		}
+		if (wParam == VK_ESCAPE) {
+			isShapeDrawing = false;
+			isDrawing = false;
+			ReleaseCapture();
+			InvalidateRect(hWnd, NULL, FALSE);
+		}
+		if (wParam == VK_F5) {
+			// Reset canvas to default size
+			width = 800; // Default width
+			height = 600; // Default height
+			if (hMemDC && hBitmap) {
+				NewCanvas(hMemDC, hBitmap, width, height);
+				InvalidateRect(hWnd, NULL, TRUE);
+			}
+		}
+		if (wParam == 'R') {
+			// Toggle shape drawing mode
+			isShapeDrawing = !isShapeDrawing;
+			if (isShapeDrawing) {
+				g_ShapeType = SHAPE_RECT; // Default to rectangle shape
+				SetCursor(LoadCursor(NULL, IDC_CROSS)); // Show cross cursor for shape drawing
+			}
+			else {
+				SetCursor(LoadCursor(NULL, IDC_ARROW)); // Reset cursor
+			}
+			InvalidateRect(hWnd, NULL, FALSE); //update UI
+		}
+        if (wParam == 'C') {
+            // Toggle shape drawing mode
+            isShapeDrawing = !isShapeDrawing;
+            if (isShapeDrawing) {
+				g_ShapeType = SHAPE_CIRC; // Default to circle shape
+                SetCursor(LoadCursor(NULL, IDC_CROSS)); // Show cross cursor for shape drawing
+            }
+            else {
+                SetCursor(LoadCursor(NULL, IDC_ARROW)); // Reset cursor
+            }
             InvalidateRect(hWnd, NULL, FALSE); //update UI
         }
         break;
@@ -596,10 +589,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_ShapeType = SHAPE_NONE; // Reset shape type
 			isEraserMode = false;
 			break;
-        case IDM_UNDO:
-            PopUndo(hMemDC, hBitmap, width, height);
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
         case IDM_EXIT:
             DestroyWindow(hWnd);
             break;
@@ -671,6 +660,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 // Draw "Color" text below the box
                 TextOut(hdc, g_PreviewBoxMargin, g_PreviewBoxMargin + g_PreviewBoxSize + 4, L"Color", 5);
+				UpdateStatusBar();
             }
 
         }
@@ -681,10 +671,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (hMemDC) DeleteDC(hMemDC);
         if (hBitmap) DeleteObject(hBitmap);
         if (g_hFont) DeleteObject(g_hFont);
-        for (HBITMAP hbm : g_UndoStack) {
-            DeleteObject(hbm);
-        }
-        g_UndoStack.clear();
         PostQuitMessage(0);
         break;
     default:
