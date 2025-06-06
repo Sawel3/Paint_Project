@@ -27,12 +27,15 @@ int g_EraserSize = 10;  // Default eraser size
 HWND hStatusBar = NULL;
 std::vector<HBITMAP> g_UndoStack;
 const int MAX_UNDO = 10; // Limit the number of undo steps
-
-
+LOGFONT g_logFont = { 0 };
+HFONT g_hFont = NULL;
 
 // Drawing state
 bool isDrawing = false;
 POINT lastPoint = { 0, 0 };
+bool isAddingText = false;
+POINT textPoint = { 0, 0 };
+
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -183,6 +186,30 @@ bool LoadBitmapFromFile(HDC hdc, HBITMAP& hBitmap, int& width, int& height, LPCW
     return true;
 }
 
+INT_PTR CALLBACK TextDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    static wchar_t* pText = nullptr;
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        pText = (wchar_t*)lParam;
+        SetDlgItemTextW(hDlg, IDC_EDIT1, pText);
+        return (INT_PTR)TRUE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            GetDlgItemTextW(hDlg, IDC_EDIT1, pText, 255);
+            EndDialog(hDlg, IDOK);
+            return (INT_PTR)TRUE;
+        }
+        else if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, IDCANCEL);
+            return (INT_PTR)TRUE;
+        }
+        break;
+    }
+    return (INT_PTR)FALSE;
+}
+
 void UpdateStatusBar()
 {
     if (hStatusBar) {
@@ -204,6 +231,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_PAINT, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
+
+    g_logFont.lfHeight = -20; // Default size
+    wcscpy_s(g_logFont.lfFaceName, L"Arial");
 
     // Perform application initialization:
     if (!InitInstance(hInstance, nCmdShow))
@@ -302,6 +332,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         width = LOWORD(lParam);
         height = HIWORD(lParam);
 
+        // Resize the status bar
+        if (hStatusBar) {
+            SendMessage(hStatusBar, WM_SIZE, 0, 0);
+        }
+
         if (hMemDC) {
             DeleteDC(hMemDC);
             hMemDC = NULL;
@@ -324,12 +359,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             DeleteObject(hbm);
         }
         g_UndoStack.clear();
-
+        UpdateStatusBar();
         // Push initial state for undo
         PushUndo(hMemDC, hBitmap, width, height);
     }
     break;
+
     case WM_LBUTTONDOWN:
+        if (isAddingText) {
+            textPoint.x = LOWORD(lParam);
+            textPoint.y = HIWORD(lParam);
+
+            // Prompt for text
+            wchar_t text[256] = L"";
+            if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_TEXT_DIALOG), hWnd, TextDialogProc, (LPARAM)text) == IDOK) {
+                // Draw text onto the canvas
+                HFONT hOldFont = NULL;
+                if (g_hFont) {
+                    hOldFont = (HFONT)SelectObject(hMemDC, g_hFont);
+                }
+                SetBkMode(hMemDC, TRANSPARENT);
+                SetTextColor(hMemDC, g_DrawColor);
+                TextOutW(hMemDC, textPoint.x, textPoint.y, text, (int)wcslen(text));
+                if (g_hFont && hOldFont) {
+                    SelectObject(hMemDC, hOldFont);
+                }
+                InvalidateRect(hWnd, NULL, FALSE);
+                PushUndo(hMemDC, hBitmap, width, height);
+            }
+            isAddingText = false;
+            SetCursor(LoadCursor(NULL, IDC_ARROW));
+            return 0; // Don't process as drawing
+        }
+		// Handle shape drawing
         if (g_ShapeType != SHAPE_NONE) {
             isShapeDrawing = true;
             shapeStart.x = shapeEnd.x = LOWORD(lParam);
@@ -415,11 +477,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         // Parse the menu selections:
         switch (wmId){
         case IDM_NEW:
-            if (hMemDC && width > 0 && height > 0) {
-                NewCanvas(hMemDC, hBitmap, width, height);
-                InvalidateRect(hWnd, NULL, TRUE);
+        {
+            int newWidth = width;
+            int newHeight = height;
+
+            // Prompt for width
+            if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SIZE_DIALOG), hWnd, SizeDialogProc, (LPARAM)&newWidth) == IDOK) {
+                // Prompt for height
+                if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SIZE_DIALOG), hWnd, SizeDialogProc, (LPARAM)&newHeight) == IDOK) {
+                    // Validate range (adjust as needed)
+                    if (newWidth > 0 && newWidth <= 4096 && newHeight > 0 && newHeight <= 4096) {
+                        width = newWidth;
+                        height = newHeight;
+                        if (hMemDC && width > 0 && height > 0) {
+                            NewCanvas(hMemDC, hBitmap, width, height);
+                            InvalidateRect(hWnd, NULL, TRUE);
+                        }
+                    }
+                    else {
+                        MessageBox(hWnd, L"Width and height must be between 1 and 4096.", L"Invalid Size", MB_OK | MB_ICONWARNING);
+                    }
+                }
             }
-            break;
+        }
+        break;
 
         case IDM_SAVE:
         {
@@ -456,6 +537,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_ABOUT:
             DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
             break;
+        case IDM_ADD_TEXT:
+            isAddingText = true;
+            SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Show text cursor
+            break;
         case IDM_ERASER:
             isEraserMode = !isEraserMode; // Toggle eraser mode
             InvalidateRect(hWnd, NULL, FALSE); //update UI
@@ -486,6 +571,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             UpdateStatusBar();
             InvalidateRect(hWnd, NULL, FALSE);
             break;
+        case IDM_SELECT_FONT:
+        {
+            CHOOSEFONT cf = { 0 };
+            cf.lStructSize = sizeof(cf);
+            cf.hwndOwner = hWnd;
+            cf.lpLogFont = &g_logFont;
+            cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT;
+            if (ChooseFont(&cf)) {
+                if (g_hFont) DeleteObject(g_hFont);
+                g_hFont = CreateFontIndirect(&g_logFont);
+            }
+        }
+        break;
         case IDM_SHAPE_RECT:
             g_ShapeType = SHAPE_RECT;
             isEraserMode = false;
@@ -582,6 +680,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         if (hMemDC) DeleteDC(hMemDC);
         if (hBitmap) DeleteObject(hBitmap);
+        if (g_hFont) DeleteObject(g_hFont);
         for (HBITMAP hbm : g_UndoStack) {
             DeleteObject(hbm);
         }
@@ -627,14 +726,14 @@ INT_PTR CALLBACK SizeDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
         {
             BOOL success = FALSE;
             int val = GetDlgItemInt(hDlg, IDC_SIZE_EDIT, &success, FALSE);
-            if (success && val > 0 && val < 100)
+            if (success && val > 0 && val < 4096)
             {
                 *pSize = val;
                 EndDialog(hDlg, IDOK);
             }
             else
             {
-                MessageBox(hDlg, L"Please enter a value between 1 and 99.", L"Invalid Size", MB_OK | MB_ICONWARNING);
+                MessageBox(hDlg, L"Please enter a value between 1 and 4096.", L"Invalid Size", MB_OK | MB_ICONWARNING);
             }
             return (INT_PTR)TRUE;
         }

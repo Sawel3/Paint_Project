@@ -25,6 +25,10 @@
 #define IDM_SAVE 32786
 #define IDM_LOAD 32787
 #define IDM_NEW 32788
+#define IDM_ADD_TEXT 40010
+#define IDD_TEXT_DIALOG  104
+#define IDC_EDIT1        1001
+#define IDM_SELECT_FONT 40020
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
