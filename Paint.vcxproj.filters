@@ -45,6 +45,9 @@
     <ClInclude Include="Utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TextShape.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Paint.cpp">
@@ -62,6 +65,9 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TextShape.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Paint.rc">
@@ -73,6 +79,9 @@
       <Filter>Resource Files</Filter>
     </Image>
     <Image Include="Paint.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="biejat.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
