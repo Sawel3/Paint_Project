@@ -153,13 +153,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         break;
     }
+
     case WM_MOUSEMOVE: {
         int x = LOWORD(lParam), y = HIWORD(lParam);
-        if (g_IsShapeDrawing && (wParam & MK_LBUTTON)) {
-            g_ShapeEnd = { x, y };
-            InvalidateRect(hWnd, nullptr, FALSE);
+
+        // Get client area
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+
+        // If mouse is outside client area while drawing, stop drawing
+        if ((g_IsDrawing || g_IsShapeDrawing) && !(wParam & MK_LBUTTON)) {
+            if (g_IsDrawing) {
+                g_IsDrawing = false;
+                ReleaseCapture();
+            }
+            if (g_IsShapeDrawing) {
+                g_IsShapeDrawing = false;
+                g_CurrentShapeType = ShapeType::None;
+                ReleaseCapture();
+            }
+            break;
         }
-        else if (g_IsDrawing && (wParam & MK_LBUTTON)) {
+
+        if (g_IsDrawing && (wParam & MK_LBUTTON)) {
+            // Check if mouse is inside client area
+            if (!PtInRect(&clientRect, { x, y })) {
+                g_IsDrawing = false;
+                ReleaseCapture();
+                break;
+            }
             POINT pt = { x, y };
             COLORREF penColor = g_IsEraserMode ? RGB(255, 255, 255) : g_DrawColor;
             int penWidth = g_IsEraserMode ? g_EraserSize : g_PenSize;
@@ -172,8 +194,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             g_LastPoint = pt;
             InvalidateRect(hWnd, nullptr, FALSE);
         }
+        else if (g_IsShapeDrawing && (wParam & MK_LBUTTON)) {
+            // Check if mouse is inside client area
+            if (!PtInRect(&clientRect, { x, y })) {
+                g_IsShapeDrawing = false;
+                g_CurrentShapeType = ShapeType::None;
+                ReleaseCapture();
+                break;
+            }
+            g_ShapeEnd = { x, y };
+            InvalidateRect(hWnd, nullptr, FALSE);
+        }
         break;
     }
+
     case WM_LBUTTONUP: {
         int x = LOWORD(lParam), y = HIWORD(lParam);
         if (g_IsShapeDrawing) {
