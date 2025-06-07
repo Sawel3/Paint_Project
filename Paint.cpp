@@ -1,6 +1,6 @@
 // PAINT.cpp : Defines the entry point for the application.
 //
-
+/*
 #include "framework.h"
 #include "paint.h"
 
@@ -761,3 +761,4 @@ INT_PTR CALLBACK SizeDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
     }
     return (INT_PTR)FALSE;
 }
+*/

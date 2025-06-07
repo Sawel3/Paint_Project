@@ -17,3 +17,7 @@
 #include <commctrl.h>
 #pragma comment(lib, "comctl32.lib")
 #include <vector>
+#include <memory>
+#include <string>
+#include <stdexcept>
+#include <windowsx.h>

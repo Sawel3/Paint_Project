@@ -28,6 +28,7 @@
 #define IDD_TEXT_DIALOG  104
 #define IDC_EDIT1        1001
 #define IDM_SELECT_FONT 40020
+#define IDR_POPUP_MENU  3000
 
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
