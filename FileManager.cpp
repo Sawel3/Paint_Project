@@ -1,6 +1,7 @@
 #include "FileManager.h"
 
-// Helper: Save HBITMAP to BMP file
+// Saves the given HBITMAP as a BMP file to the specified filename.
+// Throws std::runtime_error on any failure.
 void FileManager::Save(const std::wstring& filename, HBITMAP hBitmap, HDC hdc, int width, int height) {
     BITMAP bmp;
     if (!GetObject(hBitmap, sizeof(BITMAP), &bmp))
@@ -22,7 +23,7 @@ void FileManager::Save(const std::wstring& filename, HBITMAP hBitmap, HDC hdc, i
     BITMAPINFO biInfo = { 0 };
     biInfo.bmiHeader = bi;
 
-    // Get the bitmap bits
+    // Retrieve the bitmap bits from the device context.
     if (!GetDIBits(hdc, hBitmap, 0, height, bits.data(), &biInfo, DIB_RGB_COLORS))
         throw std::runtime_error("GetDIBits failed.");
 
@@ -44,7 +45,8 @@ void FileManager::Save(const std::wstring& filename, HBITMAP hBitmap, HDC hdc, i
         throw std::runtime_error("WriteFile failed.");
 }
 
-// Helper: Load BMP file into HBITMAP
+// Loads a BMP file from disk and creates a new HBITMAP.
+// Updates hBitmap, width, and height. Throws std::runtime_error on failure.
 void FileManager::Load(const std::wstring& filename, HBITMAP& hBitmap, HDC hdc, int& width, int& height) {
     HANDLE hFile = CreateFileW(filename.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
