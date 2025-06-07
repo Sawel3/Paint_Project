@@ -1,6 +1,9 @@
+/**
+ * @file TextShape.cpp
+ * @brief Implementation of TextShape.
+ */
 #include "TextShape.h"
 
-// Constructs a text shape with the specified properties.
 TextShape::TextShape(POINT p, const std::wstring& t, COLORREF c, const LOGFONT& f)
     : pos(p), text(t), color(c), font(f) {
 }

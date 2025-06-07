@@ -1,3 +1,7 @@
+/**
+ * @file CircleShape.cpp
+ * @brief Implementation of CircleShape.
+ */
 #include "CircleShape.h"
 
 // Draws the ellipse using the specified device context.

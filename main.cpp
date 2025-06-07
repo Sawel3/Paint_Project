@@ -1,4 +1,11 @@
-// main.cpp : Entry point for the OOP Paint application
+/**
+ * @file main.cpp
+ * @brief Entry point and main logic for the OOP Paint application.
+ *
+ * This file contains the WinMain entry point, window procedure, and
+ * global state for the Paint application. It manages drawing, shape
+ * creation, text, erasing, and user interaction.
+ */
 #include "framework.h"
 #include "IShape.h"
 #include "RectangleShape.h"
@@ -8,42 +15,90 @@
 #include "TextShape.h"
 #include "Resource.h"
 
-// Global variables
+ /** Application instance handle. */
 HINSTANCE g_hInst;
+/** Handle to the status bar window. */
 HWND g_hStatusBar = nullptr;
+/** Current drawing color. */
 COLORREF g_DrawColor = RGB(0, 0, 0);
+/** Current pen size. */
 int g_PenSize = 2;
+/** Current eraser size. */
 int g_EraserSize = 10;
+/** Whether eraser mode is active. */
 bool g_IsEraserMode = false;
+/** Whether text tool is active. */
 bool g_IsAddingText = false;
+/** Window class name. */
 const wchar_t szWindowClass[] = L" Paint na IPS";
+/** Current font for text tool. */
 LOGFONT g_logFont = { 0 };
+/** Handle to the current font. */
 HFONT g_hFont = nullptr;
 
-// Shape management
+/**
+ * @brief Types of shapes that can be drawn.
+ */
 enum class ShapeType { None, Rectangle, Circle };
+
+/** Currently selected shape type. */
 ShapeType g_CurrentShapeType = ShapeType::None;
+/** Whether a shape is currently being drawn. */
 bool g_IsShapeDrawing = false;
+/** Start and end points for the shape being drawn. */
 POINT g_ShapeStart = { 0, 0 }, g_ShapeEnd = { 0, 0 };
 
-// Drawing state
+/** Whether freehand drawing is in progress. */
 bool g_IsDrawing = false;
+/** Last point drawn in freehand mode. */
 POINT g_LastPoint = { 0, 0 };
 
-// Canvas
+/** Memory device context for the canvas. */
 HDC g_hMemDC = nullptr;
+/** Bitmap for the canvas. */
 HBITMAP g_hBitmap = nullptr;
+/** Canvas width and height. */
 int g_CanvasWidth = 1920, g_CanvasHeight = 1080;
 
-// Shapes container (encapsulation, polymorphism)
+/**
+ * @brief Container for all drawn shapes (polymorphic).
+ */
 std::vector<std::unique_ptr<IShape>> g_Shapes;
 
-// Forward declarations
+/**
+ * @brief Window procedure for the main application window.
+ * Handles all window messages and user interactions.
+ * @param hWnd Window handle.
+ * @param msg Message identifier.
+ * @param wParam Message parameter.
+ * @param lParam Message parameter.
+ * @return Result of message processing.
+ */
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+
+/**
+ * @brief Dialog procedure for the About dialog box.
+ * @param hDlg Dialog handle.
+ * @param message Message identifier.
+ * @param wParam Message parameter.
+ * @param lParam Message parameter.
+ * @return TRUE if handled, FALSE otherwise.
+ */
 INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
+
+/**
+ * @brief Updates the status bar with the current tool and settings.
+ */
 void UpdateStatusBar();
 
-// Main entry point
+/**
+ * @brief Main entry point for the application.
+ * @param hInstance Application instance handle.
+ * @param hPrevInstance Unused.
+ * @param lpCmdLine Unused.
+ * @param nCmdShow Show command for the main window.
+ * @return Exit code.
+ */
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     g_hInst = hInstance;
     // Register window class
@@ -634,6 +689,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
 }
 
+/**
+ * @brief Dialog procedure for the About dialog box.
+ */
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     UNREFERENCED_PARAMETER(lParam);
     switch (message) {
@@ -648,7 +706,10 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     }
     return (INT_PTR)FALSE;
 }
-// Update status bar with current tool info
+
+/**
+ * @brief Updates the status bar with the current tool and settings.
+ */
 void UpdateStatusBar() {
     if (g_hStatusBar) {
         wchar_t tool[32] = L"";

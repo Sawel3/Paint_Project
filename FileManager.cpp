@@ -1,3 +1,7 @@
+/**
+ * @file FileManager.cpp
+ * @brief Implementation of FileManager for BMP file operations.
+ */
 #include "FileManager.h"
 
 // Saves the given HBITMAP as a BMP file to the specified filename.

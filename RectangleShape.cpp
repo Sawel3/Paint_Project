@@ -1,3 +1,7 @@
+/**
+ * @file RectangleShape.cpp
+ * @brief Implementation of RectangleShape.
+ */
 #include "RectangleShape.h"
 
 // Draws the rectangle using the specified device context.

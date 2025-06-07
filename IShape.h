@@ -1,12 +1,22 @@
+/**
+ * @file IShape.h
+ * @brief Abstract interface for all drawable shapes.
+ */
 #pragma once
 #include "framework.h"
-// IShape: Abstract interface for all drawable shapes.
-// Provides a common interface for polymorphic shape management.
+ /**
+  * @brief Interface for drawable shapes.
+  */
 class IShape {
 public:
-    // Draws the shape onto the given device context.
+    /**
+     * @brief Draw the shape onto the given device context.
+     * @param hdc The device context to draw on.
+     */
     virtual void Draw(HDC hdc) const = 0;
 
-    // Virtual destructor for safe polymorphic deletion.
+    /**
+     * @brief Virtual destructor for safe polymorphic deletion.
+     */
     virtual ~IShape() {}
 };
